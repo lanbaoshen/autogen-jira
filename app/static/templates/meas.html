@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoGen Jira Measurement</title>
+    <script src="/static/js/tailwindcss.js"></script>
+    <script src="/static/js/chart.js"></script>
+    <script src="/static/js/echarts.min.js"></script>
+</head>
+<body>
+<div class="max-w-7xl mx-auto bg-white rounded-lg shadow-lg p-8">
+    <div class="grid grid-cols-2 gap-4 mb-8">
+        <div>
+            <label for="started" class="block text-sm font-medium text-gray-700">Started</label>
+            <input type="date" id="started"
+                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                   onchange="genAll()">
+        </div>
+        <div>
+            <label for="ended" class="block text-sm font-medium text-gray-700">Ended</label>
+            <input type="date" id="ended"
+                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                   onchange="genAll()">
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-8 mb-8">
+        <div class="grid grid-cols-3 gap-4">
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <h3 class="text-lg font-semibold mb-2">Model</h3>
+                <p class="text-2xl font-bold">{{ model }}</p>
+            </div>
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <h3 class="text-lg font-semibold mb-2">Prompt Tokens</h3>
+                <p class="text-2xl font-bold" id="promptTokens"></p>
+            </div>
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <h3 class="text-lg font-semibold mb-2">Completion Tokens</h3>
+                <p class="text-2xl font-bold" id="completionTokens"></p>
+            </div>
+        </div>
+        <div>
+            <h3 class="text-lg font-semibold mb-4">Chat Count by User</h3>
+            <div id="chatPie" style="height: 100%;"></div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-8">
+        <div>
+            <h3 class="text-lg font-semibold mb-4">Chat Count Date by User</h3>
+            <div id="chatCountDateByUser" style="height: 300px;"></div>
+        </div>
+        <div>
+            <h3 class="text-lg font-semibold mb-4">Tool Usage</h3>
+            <div id="toolUsage" style="height: 300px;"></div>
+        </div>
+    </div>
+</div>
+</body>
+<script>
+    function formatDate(date) {
+        const d = new Date(date)
+        let month = '' + (d.getMonth() + 1),
+            day = '' + d.getDate(),
+            year = d.getFullYear()
+
+        if (month.length < 2) month = '0' + month;
+        if (day.length < 2) day = '0' + day;
+
+        return [year, month, day].join('-');
+    }
+
+    document.addEventListener('DOMContentLoaded', (event) => {
+        const today = new Date()
+        document.getElementById('ended').value = formatDate(today)
+
+        const startDay = new Date(today)
+        startDay.setDate(today.getDate() - 7)
+        document.getElementById('started').value = formatDate(startDay)
+        genAll()
+    })
+
+    async function genChatPie(data) {
+        var dom = document.getElementById("chatPie");
+        var myChart = echarts.init(dom, null, {
+            renderer: 'canvas',
+            useDirtyRect: true,
+        });
+
+        let temp = {}
+        for (const date in data) {
+            for (const username in data[date]) {
+                if (!temp[username]) {
+                    temp[username] = data[date][username]
+                }
+                temp[username] += data[date][username]
+            }
+        }
+        let series = []
+        for (const t in temp) {
+            series.push({value: temp[t], name: t})
+        }
+
+        var option = {
+            tooltip: {
+                trigger: 'item',
+            },
+            legend: {
+                top: '5%',
+                left: 'center',
+            },
+            series: [
+                {
+                    name: '',
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    avoidLabelOverlap: false,
+                    itemStyle: {
+                        borderRadius: 10,
+                        borderColor: '#fff',
+                        borderWidth: 2
+                    },
+                    label: {
+                        show: true,
+                        position: 'center',
+                    },
+                    emphasis: {
+                        label: {
+                            show: true,
+                            fontSize: 10,
+                            fontWeight: 'bold'
+                        }
+                    },
+                    labelLine: {
+                        show: true
+                    },
+                    data: series
+                }
+            ]
+        };
+        myChart.setOption(option);
+        window.addEventListener('resize', myChart.resize)
+    }
+
+    async function genChatCountDateByUser(data) {
+        var dom = document.getElementById("chatCountDateByUser");
+        var myChart = echarts.init(dom, null, {
+            renderer: 'canvas',
+            useDirtyRect: true,
+        });
+
+        let series = {}
+        let xAxis = [];
+        for (const date in data) {
+            xAxis.push(date)
+            for (const username in data[date]) {
+                if (!series[username]) {
+                    series[username] = {
+                        name: username,
+                        type: 'bar',
+                        stack: 'total',
+                        data: [[date, data[date][username]]]
+                    }
+                } else {
+                    series[username].data.push([date, data[date][username]])
+                }
+            }
+        }
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'shadow'
+                }
+            },
+            legend: {},
+            xAxis: {
+                type: 'category',
+                data: xAxis
+            },
+            yAxis: {
+                type: 'value'
+            },
+            series: Object.values(series)
+        };
+
+        myChart.setOption(option);
+        window.addEventListener('resize', myChart.resize)
+    }
+
+    async function fetchTokenUse() {
+        const params = {
+            started: `${document.getElementById('started').value}T00:00:00Z`,
+            ended: `${document.getElementById('ended').value}T23:59:59Z`,
+            limit: 999999,
+        }
+        const queryParams = new URLSearchParams(params);
+
+        const urlWithParams = `{{ token_use_url }}?` + queryParams
+        const response = await fetch(urlWithParams)
+        let data = await response.json()
+
+        var promptTokens = 0
+        var completionTokens = 0
+        for (const d in data.data) {
+            promptTokens += data.data[d].prompt_tokens
+            completionTokens += data.data[d].completion_tokens
+        }
+
+        document.getElementById('promptTokens').textContent = promptTokens
+        document.getElementById('completionTokens').textContent = completionTokens
+    }
+
+    async function fetchChatIds() {
+        const params = {
+            started: `${document.getElementById('started').value}T00:00:00Z`,
+            ended: `${document.getElementById('ended').value}T23:59:59Z`,
+            limit: 999999,
+        }
+        const queryParams = new URLSearchParams(params);
+
+        const urlWithParams = `{{ chat_url }}?` + queryParams
+        const response = await fetch(urlWithParams);
+        let data = await response.json();
+
+        data = data.data.reduce((acc, item) => {
+            const date = item.created.split('T')[0];
+            const username = item.username;
+
+            if (!acc[date]) {
+                acc[date] = {}
+            }
+            if (!acc[date][username]) {
+                acc[date][username] = 0;
+            }
+            acc[date][username]++;
+            return acc
+        }, {});
+        await genChatPie(data)
+        await genChatCountDateByUser(data)
+    }
+
+    async function fetchToolUse() {
+        const params = {
+            started: `${document.getElementById('started').value}T00:00:00Z`,
+            ended: `${document.getElementById('ended').value}T23:59:59Z`,
+            limit: 999999,
+        }
+        const queryParams = new URLSearchParams(params);
+
+        const urlWithParams = `{{ tool_use_url }}?` + queryParams
+        const response = await fetch(urlWithParams)
+        let data = await response.json()
+
+        data = data.data.reduce((acc, item) => {
+            const date = item.created.split('T')[0];
+            const result = item.result;
+
+            if (!acc[date]) {
+                acc[date] = {}
+            }
+            if (!acc[date][result]) {
+                acc[date][result] = 0;
+            }
+            acc[date][result]++;
+            return acc
+        }, {});
+
+        var dom = document.getElementById("toolUsage");
+        var myChart = echarts.init(dom, null, {
+            renderer: 'canvas',
+            useDirtyRect: true,
+        });
+
+        let series = {}
+        let xAxis = [];
+        for (const date in data) {
+            xAxis.push(date)
+            for (const result in data[date]) {
+                if (!series[result]) {
+                    series[result] = {
+                        name: result,
+                        type: 'bar',
+                        stack: 'total',
+                        data: [[date, data[date][result]]]
+                    }
+                } else {
+                    series[result].data.push([date, data[date][result]])
+                }
+            }
+        }
+
+        if (series.true) {
+            series.true.name = 'Success'
+        }
+        if (series.false) {
+            series.false.name = 'Fail'
+        }
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'shadow'
+                }
+            },
+            legend: {},
+            xAxis: {
+                type: 'category',
+                data: xAxis
+            },
+            yAxis: {
+                type: 'value'
+            },
+            series: Object.values(series)
+        };
+
+        myChart.setOption(option);
+        window.addEventListener('resize', myChart.resize)
+    }
+
+    async function genAll() {
+        await fetchChatIds()
+        await fetchToolUse()
+        await fetchTokenUse()
+    }
+
+</script>
+</html>
